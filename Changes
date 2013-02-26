@@ -1,0 +1,6 @@
+Revision history for Perl extension ExtUtils::MakeMaker::BigHelper.
+
+0.90  Thu Feb 21 13:25:37 2013
+	- original version; created by h2xs 1.23 with options
+		-A -X -n ExtUtils::MakeMaker::BigHelper
+

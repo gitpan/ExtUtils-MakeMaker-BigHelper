@@ -1,0 +1,6 @@
+Changes
+Makefile.PL
+MANIFEST
+README
+t/ExtUtils-MakeMaker-BigHelper.t
+lib/ExtUtils/MakeMaker/BigHelper.pm
