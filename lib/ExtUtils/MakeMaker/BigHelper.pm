@@ -47,7 +47,7 @@ our @EXPORT_OK = ( @{ $EXPORT_TAGS{'all'} } );
 our @EXPORT = qw(
 );
 
-our $VERSION = '0.91';
+our $VERSION = '0.92';
 
 my $debugf;
 
@@ -504,37 +504,35 @@ sub init_xs {
     my @myextlib = ref($self->{MYEXTLIB}) eq 'ARRAY'
         ?  @{ $self->{MYEXTLIB} }
         : split /\s+/, $self->{MYEXTLIB};
-    my @Makefile_PL_dirs;
-    my @c_extension_dirs;
+
+    my %PL_dirs;
+    my %cleanup_makefile_dirs;
     my %c_extension_libs;
+    my @c_extension_libs;
+    my @c_myextlib_replacement;
+
     foreach my $subdir ( @{ $self->{DIR} }, @myextlib ) {
-      if ($subdir =~ /\.(?:a|so)$/) {
-        my $lib = $subdir;
-        $subdir =~ s/\/[^\/]+$//;
-        $c_extension_libs{$subdir} = $lib;
+      if ($subdir =~ /^(.+)\/lib([^\/]+)\.(?:a|so)$/) {
+        # $subdir is actually the pathname of a lib
+        $c_extension_libs{$1}{$subdir} = 1;
+        $cleanup_makefile_dirs{$1} = 1;
+        push @c_extension_libs, $2;
+        push @c_myextlib_replacement, $subdir;
       } elsif ($subdir =~ /\/(?:Makefile|Build)\.PL$/) {
-        $subdir =~ s/\/[^\/]+$//;
-      }
-
-      if (-f "$subdir/Makefile.PL" || -f "$subdir/Build.PL") {
-        push @Makefile_PL_dirs, $subdir;
-      } else {
-        push @c_extension_dirs, $subdir;
+        $PL_dirs{$`} = 1;
+        $cleanup_makefile_dirs{$`} = 1 if -f "$`/Makefile.PL";
       }
     }
 
-    if (@c_extension_dirs) {
-      if (@Makefile_PL_dirs) {
-        $self->{DIR} = \@Makefile_PL_dirs;
-      } else {
-        $self->{DIR} = [ ];
-      }
-      $self->{MY_SUBDIRS} = \@c_extension_dirs;
-    }
+    $self->{MY_CLEANUP_MAKEFILE_DIRS} = [ keys %cleanup_makefile_dirs ];
 
     if (%c_extension_libs) {
+      # have to re-write the DIR setting
+      $self->{DIR} = %PL_dirs ? [ keys %PL_dirs ] : [ ];
+
       $self->{MY_EXTENSION_LIBS} = \%c_extension_libs;
-      $self->{MYEXTLIB} = join(' ', values %c_extension_libs);
+      $self->{MY_EXTENSION_LIBS_IN_ORDER} = \@c_extension_libs;
+      $self->{MYEXTLIB} = join(' ', @c_myextlib_replacement);
     }
   }
 
@@ -578,7 +576,7 @@ sub clean_subdirs {
   my $make = '
 clean_subdirs :
 ';
-  foreach my $subdir (@{ $self->{MY_SUBDIRS} } ) {
+  foreach my $subdir (@{ $self->{MY_CLEANUP_MAKEFILE_DIRS} } ) {
     $make .= '
 	cd '.$subdir.' && $(MAKE) clean
 ';
@@ -634,8 +632,9 @@ sub postamble {
   print STDERR "debug: ", Data::Dumper::Dumper($self), "\n" if $debugf;
 
   my $make = '';
-  while (my ($subdir, $extlib) = each %{ $self->{MY_EXTENSION_LIBS} }) {
-    $make .= '
+  foreach my $subdir (keys %{ $self->{MY_EXTENSION_LIBS} }) {
+    foreach my $extlib (keys %{ $self->{MY_EXTENSION_LIBS}{$subdir} }) {
+      $make .= '
 
 '.$extlib.':
 	BUILDDIR=`pwd`/; \
@@ -669,6 +668,7 @@ pure_vendor_install ::
 	install
 ';
 
+    }
   }
   
   return $make unless $self->{MY_XS_TARGETS};
@@ -867,11 +867,8 @@ INST_DYNAMIC_FIX = '.$ld_fix.'
     }
 
     my @extlibs;
-    foreach my $extlib (split /\s+/, $self->{MYEXTLIB}) {
-      if ($extlib =~/^(.*)\/lib([^\/]+)\.(a|so)$/) {
-        push @extlibs, "-L$1 -l$2";
-      }
-    }
+    push @extlibs, map { "-L$_" } sort keys %{ $self->{MY_EXTENSION_LIBS} };
+    push @extlibs, map { "-l$_" } @{ $self->{MY_EXTENSION_LIBS_IN_ORDER} };
 
     push @m, sprintf <<'MAKE', $ld_run_path_shell, $ldrun, '$<', join(' ', @extlibs), $libs;
 	%s$(LD) %s $(LDDLFLAGS) %s $(OTHERLDFLAGS) -o $@ %s	\

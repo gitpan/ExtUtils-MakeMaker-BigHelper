@@ -1,5 +1,5 @@
-ExtUtils-MakeMaker-BigHelper version 0.91
-=====================================
+ExtUtils-MakeMaker-BigHelper version 0.92
+=========================================
 
 This package extends or alters the functionality of ExtUtils::MakeMaker,
 in a way more suitable perhaps for large projects using a lot of perl XS.
